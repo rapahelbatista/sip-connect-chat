@@ -240,7 +240,9 @@ sed -i "s|DOMAIN|${DOMAIN}|g" /etc/asterisk/http.conf
 
 # ---- CERTIFICADO SSL ----
 log "Gerando certificado SSL..."
+systemctl stop nginx 2>/dev/null || true
 certbot certonly --standalone -d ${DOMAIN} --email ${WEBRTC_CERT_EMAIL} --agree-tos --non-interactive || warn "SSL falhou - configure manualmente"
+systemctl start nginx 2>/dev/null || true
 
 # ---- NGINX REVERSE PROXY ----
 log "Configurando Nginx..."
@@ -317,7 +319,8 @@ DEL_INSTANCE=false
 EVOL_EOF
 
 npm install
-npm run build
+npx prisma generate 2>/dev/null || warn "Prisma generate falhou - verifique DATABASE_CONNECTION_URI no .env"
+npm run build || warn "Build da Evolution API falhou - verifique as dependências"
 
 # Systemd service para Evolution API
 cat > /etc/systemd/system/evolution-api.service << 'SVC_EOF'
