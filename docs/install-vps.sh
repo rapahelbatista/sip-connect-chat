@@ -15,6 +15,9 @@ ASTERISK_AMI_USER="admin"          # Usuário AMI do Asterisk
 ASTERISK_AMI_PASS="SuaSenhaForte123!"  # Senha AMI
 WEBRTC_CERT_EMAIL="seu@email.com"  # Email para certificado SSL
 EVOLUTION_API_KEY="sua-chave-api"  # Chave da Evolution API
+POSTGRES_DB="evolution"            # Nome do banco PostgreSQL
+POSTGRES_USER="evolution"          # Usuário PostgreSQL
+POSTGRES_PASS="EvoPass$(openssl rand -hex 8)"  # Senha gerada automaticamente
 
 # Cores
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -294,6 +297,22 @@ ln -sf /etc/nginx/sites-available/central /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl restart nginx
 
+# ---- POSTGRESQL ----
+log "Instalando PostgreSQL..."
+apt install -y postgresql postgresql-contrib
+systemctl enable postgresql
+systemctl start postgresql
+
+log "Configurando banco de dados para Evolution API..."
+sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='${POSTGRES_USER}'" | grep -q 1 || \
+  sudo -u postgres psql -c "CREATE USER ${POSTGRES_USER} WITH PASSWORD '${POSTGRES_PASS}';"
+sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${POSTGRES_DB}'" | grep -q 1 || \
+  sudo -u postgres psql -c "CREATE DATABASE ${POSTGRES_DB} OWNER ${POSTGRES_USER};"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_USER};"
+
+POSTGRES_URI="postgresql://${POSTGRES_USER}:${POSTGRES_PASS}@localhost:5432/${POSTGRES_DB}"
+log "PostgreSQL configurado: ${POSTGRES_DB}"
+
 # ---- EVOLUTION API (WhatsApp) ----
 log "Instalando Node.js 20..."
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -308,7 +327,7 @@ cat > .env << EVOL_EOF
 SERVER_URL=https://${DOMAIN}/evolution
 AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
 DATABASE_PROVIDER=postgresql
-DATABASE_CONNECTION_URI=
+DATABASE_CONNECTION_URI=${POSTGRES_URI}
 DATABASE_SAVE_DATA_INSTANCE=true
 DATABASE_SAVE_DATA_NEW_MESSAGE=true
 DATABASE_SAVE_MESSAGE_UPDATE=true
@@ -319,8 +338,9 @@ DEL_INSTANCE=false
 EVOL_EOF
 
 npm install
-npx prisma generate 2>/dev/null || warn "Prisma generate falhou - verifique DATABASE_CONNECTION_URI no .env"
-npm run build || warn "Build da Evolution API falhou - verifique as dependências"
+npx prisma generate || warn "Prisma generate falhou"
+npx prisma db push || warn "Prisma db push falhou - verifique a conexão com PostgreSQL"
+npm run build || warn "Build da Evolution API falhou"
 
 # Systemd service para Evolution API
 cat > /etc/systemd/system/evolution-api.service << 'SVC_EOF'
