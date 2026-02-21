@@ -18,6 +18,7 @@ EVOLUTION_API_KEY="sua-chave-api"  # Chave da Evolution API
 POSTGRES_DB="evolution"            # Nome do banco PostgreSQL
 POSTGRES_USER="evolution"          # Usuário PostgreSQL
 GIT_REPO=""                        # URL do repositório Git do painel (ex: https://github.com/user/repo.git)
+GIT_TOKEN=""                       # Token de acesso pessoal do GitHub (para repos privados)
 
 # ---- ARQUIVO DE ESTADO (checkpoint) ----
 STATE_FILE="/opt/.central-install-state"
@@ -696,7 +697,16 @@ if ! step_done "painel_web"; then
     if [ -z "$GIT_REPO" ]; then
       err "GIT_REPO não configurado! Edite a variável GIT_REPO no topo do script com a URL do seu repositório."
     fi
-    run git clone "$GIT_REPO" central-painel
+
+    # Construir URL com token para repos privados (evita prompt de senha)
+    CLONE_URL="$GIT_REPO"
+    if [ -n "$GIT_TOKEN" ]; then
+      # Transforma https://github.com/user/repo.git → https://TOKEN@github.com/user/repo.git
+      CLONE_URL=$(echo "$GIT_REPO" | sed "s|https://|https://${GIT_TOKEN}@|")
+      info "Usando token de acesso para clonar repositório privado"
+    fi
+
+    run git clone "$CLONE_URL" central-painel
     cd central-painel
   fi
 
