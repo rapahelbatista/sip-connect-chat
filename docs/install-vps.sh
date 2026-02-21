@@ -278,6 +278,13 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
     }
+
+    # Painel Web (React SPA)
+    location / {
+        root /var/www/central-painel;
+        index index.html;
+        try_files \$uri \$uri/ /index.html;
+    }
 }
 NGINX_EOF
 
@@ -330,6 +337,22 @@ RestartSec=10
 WantedBy=multi-user.target
 SVC_EOF
 
+# ---- BUILD DO PAINEL WEB ----
+log "Fazendo build do painel web..."
+cd /opt
+if [ -d "central-painel" ]; then
+  cd central-painel && git pull
+else
+  git clone https://github.com/SEU_USUARIO/SEU_REPOSITORIO.git central-painel
+  cd central-painel
+fi
+
+npm install
+npm run build
+mkdir -p /var/www/central-painel
+cp -r dist/* /var/www/central-painel/
+chown -R www-data:www-data /var/www/central-painel
+
 # ---- INICIAR SERVIÇOS ----
 log "Iniciando serviços..."
 systemctl daemon-reload
@@ -355,10 +378,13 @@ echo "    URL: https://${DOMAIN}/evolution"
 echo "    API Key: ${EVOLUTION_API_KEY}"
 echo ""
 echo "  Nginx: https://${DOMAIN}"
+echo "  Painel Web: https://${DOMAIN}/"
 echo ""
 echo "  PRÓXIMOS PASSOS:"
-echo "    1. Edite as senhas em /etc/asterisk/pjsip.conf"
-echo "    2. Conecte o WhatsApp: POST ${DOMAIN}/evolution/instance/create"
-echo "    3. Configure o painel web para apontar para este servidor"
+echo "    1. Edite DOMAIN e senhas no topo deste script"
+echo "    2. Troque a URL do git clone pela do seu repositório GitHub"
+echo "       (Conecte o GitHub no Lovable: Settings > GitHub)"
+echo "    3. Conecte o WhatsApp: POST ${DOMAIN}/evolution/instance/create"
+echo "    4. Para atualizar o painel: cd /opt/central-painel && git pull && npm run build && cp -r dist/* /var/www/central-painel/"
 echo ""
 echo "=================================================="
