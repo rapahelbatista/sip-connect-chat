@@ -6,6 +6,7 @@
 # ================================================================
 # USO: chmod +x install.sh && sudo ./install.sh
 # Para recomeçar do zero: sudo ./install.sh --reset
+# Verificar status dos serviços: sudo ./install.sh --status
 # ================================================================
 
 # ---- CONFIGURAÇÕES (EDITE ANTES DE EXECUTAR) ----
@@ -32,6 +33,64 @@ info() { echo -e "${CYAN}[i]${NC} $1"; }
 if [ "$1" = "--reset" ]; then
   rm -f "$STATE_FILE" "$VARS_FILE"
   log "Estado resetado. Execute novamente sem --reset."
+  exit 0
+fi
+
+# Status dos serviços
+if [ "$1" = "--status" ]; then
+  echo ""
+  echo "=================================================="
+  echo -e "${CYAN}  STATUS DOS SERVIÇOS${NC}"
+  echo "=================================================="
+  echo ""
+
+  check_service() {
+    local name=$1
+    local svc=$2
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+      echo -e "  ${GREEN}● ${name}${NC} — ativo (running)"
+    else
+      echo -e "  ${RED}● ${name}${NC} — inativo/parado"
+    fi
+  }
+
+  check_service "Asterisk" "asterisk"
+  check_service "Nginx" "nginx"
+  check_service "PostgreSQL" "postgresql"
+  check_service "Evolution API" "evolution-api"
+
+  echo ""
+  echo -e "  ${CYAN}Portas em uso:${NC}"
+  echo "  ──────────────────────────────────"
+  for port in 80 443 5060 8080 8089 5432; do
+    PROC=$(ss -tlnp "sport = :$port" 2>/dev/null | tail -n +2 | awk '{print $4, $6}' | head -1)
+    if [ -n "$PROC" ]; then
+      echo -e "    ${GREEN}:${port}${NC}  $PROC"
+    else
+      echo -e "    ${YELLOW}:${port}${NC}  (livre)"
+    fi
+  done
+
+  echo ""
+  echo -e "  ${CYAN}Disco:${NC}"
+  df -h / | tail -1 | awk '{printf "    Usado: %s / %s (%s)\n", $3, $2, $5}'
+
+  echo ""
+  echo -e "  ${CYAN}Memória:${NC}"
+  free -h | grep Mem | awk '{printf "    Usada: %s / %s\n", $3, $2}'
+
+  echo ""
+  if [ -f "$STATE_FILE" ]; then
+    echo -e "  ${CYAN}Etapas de instalação:${NC}"
+    while IFS= read -r step; do
+      echo -e "    ${GREEN}✓${NC} $step"
+    done < "$STATE_FILE"
+  else
+    echo -e "  ${YELLOW}Nenhuma instalação registrada${NC}"
+  fi
+
+  echo ""
+  echo "=================================================="
   exit 0
 fi
 
