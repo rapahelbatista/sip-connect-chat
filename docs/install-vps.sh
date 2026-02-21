@@ -642,6 +642,51 @@ EVOL_EOF
 
   run npm install
 
+  # Instalar @types faltantes conhecidos da Evolution API
+  log "Instalando dependências @types faltantes..."
+  npm install --save-dev \
+    @types/compression \
+    @types/cors \
+    @types/express \
+    @types/mime-types \
+    @types/node \
+    @types/uuid \
+    @types/json-schema \
+    @types/qrcode \
+    @types/qrcode-terminal \
+    2>/dev/null || warn "Alguns @types podem não ter sido instalados"
+
+  # Detectar e instalar @types adicionais a partir de erros do tsc
+  info "Verificando tipos faltantes com build de teste..."
+  npm run build 2>&1 | tee /tmp/evo-build-1.log || true
+
+  # Extrair nomes de pacotes @types faltantes dos erros
+  MISSING_TYPES=$(grep -oP "Cannot find module '(@?[a-zA-Z0-9_/-]+)'" /tmp/evo-build-1.log \
+    | sed "s/Cannot find module '//;s/'//" \
+    | grep -v "^\.\|^src\|^@prisma" \
+    | sort -u \
+    | while read mod; do
+        # Converter nome do módulo para @types/nome
+        TYPE_PKG="@types/$(echo "$mod" | sed 's|@||;s|/|__| ')"
+        echo "$TYPE_PKG"
+      done)
+
+  if [ -n "$MISSING_TYPES" ]; then
+    info "Instalando tipos adicionais detectados: $MISSING_TYPES"
+    npm install --save-dev $MISSING_TYPES 2>/dev/null || warn "Alguns @types extras não foram encontrados no npm"
+  fi
+
+  # Configurar tsconfig para ignorar erros em node_modules e ser mais tolerante
+  if [ -f "tsconfig.json" ]; then
+    info "Ajustando tsconfig.json para build mais tolerante..."
+    # Adicionar skipLibCheck se não existir
+    if ! grep -q '"skipLibCheck"' tsconfig.json; then
+      sed -i 's/"compilerOptions": {/"compilerOptions": {\n    "skipLibCheck": true,/' tsconfig.json
+    fi
+    # Garantir skipLibCheck = true
+    sed -i 's/"skipLibCheck": false/"skipLibCheck": true/' tsconfig.json
+  fi
+
   if ! npx prisma generate; then
     err "Prisma generate falhou. Verifique se o schema Prisma está correto."
   fi
@@ -652,8 +697,9 @@ EVOL_EOF
     exit 1
   fi
 
-  # Build pode gerar warnings de TS mas precisa gerar o arquivo principal
-  npm run build 2>&1 | tee /tmp/evo-build.log
+  # Build final
+  log "Executando build final da Evolution API..."
+  npm run build 2>&1 | tee /tmp/evo-build.log || true
   
   # Verificar se o build gerou os arquivos (mesmo com warnings de TS)
   if [ ! -f "dist/src/main.js" ]; then
